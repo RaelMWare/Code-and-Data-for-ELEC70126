@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
 
-# ── ThingSpeak Channels ──────────────────────────────────────────────────────
+# ThingSpeak channels
 
 CHANNELS = {
     "indoor": {
@@ -48,12 +48,35 @@ CHANNELS = {
 
 REFRESH_SECONDS = 30
 
-# ── CO₂ Thresholds (defaults) ───────────────────────────────────────────────
+# CO2 thresholds
 
 CO2_GREEN = 800
 CO2_AMBER = 1000
 
-# ── Data fetch helpers ───────────────────────────────────────────────────────
+# Ventilation rate mode
+# "default" → uses CO2_DECAY_RATE_DEFAULT (safe, tested)
+# "dynamic" → estimates rate from last 5 window-open events (experimental)
+VENTILATION_RATE_MODE = "default"
+CO2_DECAY_RATE_DEFAULT = 10  # ppm per minute
+
+
+def _dynamic_decay_rate(df: "pd.DataFrame") -> float:
+    """Compute median CO₂ decay rate (ppm/min) from last 5 window-open events."""
+    if df is None or df.empty:
+        return CO2_DECAY_RATE_DEFAULT
+    opens = df.index[df["window_open"].diff() == 1][-5:]
+    rates = []
+    for t_open in opens:
+        seg = df.loc[t_open: t_open + pd.Timedelta(minutes=15), "indoor_co2_ppm"].dropna()
+        if len(seg) >= 2:
+            elapsed = (seg.index[-1] - seg.index[0]).total_seconds() / 60
+            if elapsed > 0:
+                rates.append((seg.iloc[0] - seg.iloc[-1]) / elapsed)
+    if len(rates) < 2:
+        return CO2_DECAY_RATE_DEFAULT
+    return float(np.median(rates))
+
+# Data fetch helpers
 
 
 def _fetch_channel(channel_key: str, results: int = 120) -> pd.DataFrame:
@@ -73,14 +96,12 @@ def _fetch_channel(channel_key: str, results: int = 120) -> pd.DataFrame:
     df["created_at"] = pd.to_datetime(df["created_at"])
     df = df.set_index("created_at").sort_index()
 
-    # Rename fields and convert to numeric
     rename = {k: v for k, v in ch["fields"].items() if k in df.columns}
     df = df.rename(columns=rename)
     for col in ch["fields"].values():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Keep only the named columns
     keep = [c for c in ch["fields"].values() if c in df.columns]
     return df[keep]
 
@@ -155,12 +176,13 @@ def fetch_latest(results: int = 120) -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
 
-    # Outer-join on timestamp so nothing is lost
     df = frames[0]
     for f in frames[1:]:
         df = df.join(f, how="outer")
 
     df = df.sort_index().ffill()
+    if "indoor_co2_ppm" in df.columns:
+        df["indoor_co2_ppm"] = df["indoor_co2_ppm"].rolling(window=2, min_periods=1).mean()
     return df
 
 
@@ -218,7 +240,7 @@ def log_concentration(level: int) -> bool:
         return False
 
 
-# ── Ventilation advisor ──────────────────────────────────────────────────────
+# Ventilation advisor
 
 
 def ventilation_advice(
@@ -227,6 +249,7 @@ def ventilation_advice(
     outdoor_humidity: float,
     co2_threshold: float = 800.0,
     temp_threshold: float = 5.0,
+    df=None,
 ) -> dict:
     """
     Evaluate whether opening a window is advised.
@@ -253,16 +276,20 @@ def ventilation_advice(
     if advised:
         reasons.append("All conditions met for ventilation")
 
-    # Estimate duration: ~50 ppm drop per 5 min with window open (rough heuristic)
     est_min = None
     if advised and indoor_co2 > co2_threshold:
         excess = indoor_co2 - co2_threshold
-        est_min = max(5, int(excess / 10))  # ~10 ppm per minute is typical
+        rate = (
+            _dynamic_decay_rate(df)
+            if VENTILATION_RATE_MODE == "dynamic"
+            else CO2_DECAY_RATE_DEFAULT
+        )
+        est_min = max(5, int(excess / rate))
 
     return {"advised": advised, "reasons": reasons, "estimated_minutes": est_min}
 
 
-# ── Styling helpers ──────────────────────────────────────────────────────────
+# Styling helpers
 
 GLOBAL_CSS = """
 <style>
