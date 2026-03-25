@@ -15,7 +15,7 @@ inject_css()
 
 st.markdown("## 📊 Analytics")
 
-# ── Data source ──────────────────────────────────────────────────────────────
+# Data source
 with st.sidebar:
     st.markdown("### 📅 Data Range")
     today = datetime.now().date()
@@ -34,7 +34,7 @@ if df.empty:
     st.info("No data available for analysis.")
     st.stop()
 
-# ── 1. Summary statistics ───────────────────────────────────────────────────
+# Summary statistics
 st.markdown("### Summary Statistics")
 
 stat_cols = [
@@ -61,7 +61,7 @@ for col, label in stat_cols:
 if rows:
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-# ── 2. Average CO₂ by hour ──────────────────────────────────────────────────
+# Average CO2 by hour
 st.markdown("### Average CO₂ by Hour of Day")
 
 if "indoor_co2_ppm" in df.columns:
@@ -100,14 +100,13 @@ if "indoor_co2_ppm" in df.columns:
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-# ── 3. CO₂ vs Concentration ─────────────────────────────────────────────────
+# CO2 vs concentration
 if "concentration_level" in df.columns and "indoor_co2_ppm" in df.columns:
     conc_df = df[["indoor_co2_ppm", "concentration_level"]].dropna()
 
     if len(conc_df) >= 3:
         st.markdown("### CO₂ Level vs Self-Reported Concentration")
 
-        # Bin concentration levels and compute mean CO₂
         conc_summary = conc_df.groupby("concentration_level")["indoor_co2_ppm"].agg(["mean", "count"])
         conc_summary = conc_summary.reset_index()
 
@@ -147,7 +146,7 @@ if "concentration_level" in df.columns and "indoor_co2_ppm" in df.columns:
     else:
         st.info("Not enough concentration readings for analysis (need at least 3).")
 
-# ── 4. Window open impact ────────────────────────────────────────────────────
+# Window open impact
 if "window_open" in df.columns and "indoor_co2_ppm" in df.columns:
     win_df = df[["indoor_co2_ppm", "window_open"]].dropna()
     if not win_df.empty:
@@ -166,7 +165,6 @@ if "window_open" in df.columns and "indoor_co2_ppm" in df.columns:
                 diff = closed_co2.mean() - open_co2.mean()
                 st.metric("Difference", f"{diff:,.0f} ppm", delta=f"-{diff:,.0f}")
 
-# ── Footer ───────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.caption(
     f"Analysing {len(df):,} data points · "

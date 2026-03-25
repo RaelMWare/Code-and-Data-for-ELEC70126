@@ -77,7 +77,6 @@ with tab_monitor:
 
     co2_val = latest.get("indoor_co2_ppm")
 
-    # neon color based on CO2 level
     if co2_val < CO2_GREEN:
         neon_color = "#00E676"
         bg_glow = "rgba(0, 230, 118, 0.15)"
